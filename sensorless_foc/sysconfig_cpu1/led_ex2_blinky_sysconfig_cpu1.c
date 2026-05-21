@@ -2,146 +2,92 @@
 //
 // FILE:   led_ex2_blinky_sysconfig_cpu1.c
 //
-// TITLE: SysConfig LED Blinky Example
+// TITLE:  Sensorless PMSM FOC - Speed Outer Loop (CPU1)
 //
-//! \addtogroup driver_dual_example_list
-//! <h1> LED Blinky Example</h1>
-//!
-//! This example demonstrates how to blink a LED using CPU1 and blink another
-//! LED using CPU2 (led_ex1_blinky_cpu2.c).
-//!
-//! \b External \b Connections \n
-//!  - None.
-//!
-//! \b Watch \b Variables \n
-//!  - None.
-//!
-//
-//#############################################################################
-//
-//
-// $Copyright:
-// Copyright (C) 2022 Texas Instruments Incorporated - http://www.ti.com
-//
-// Redistribution and use in source and binary forms, with or without 
-// modification, are permitted provided that the following conditions 
-// are met:
-// 
-//   Redistributions of source code must retain the above copyright 
-//   notice, this list of conditions and the following disclaimer.
-// 
-//   Redistributions in binary form must reproduce the above copyright
-//   notice, this list of conditions and the following disclaimer in the 
-//   documentation and/or other materials provided with the   
-//   distribution.
-// 
-//   Neither the name of Texas Instruments Incorporated nor the names of
-//   its contributors may be used to endorse or promote products derived
-//   from this software without specific prior written permission.
-// 
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS 
-// "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT 
-// LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-// A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT 
-// OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, 
-// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT 
-// LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-// DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-// THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT 
-// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE 
-// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-// $
 //#############################################################################
 
-//
-// Included Files
-//
-// Make sure to include "board.h" to use SysConfig
-//
 #include "driverlib.h"
 #include "device.h"
 #include "board.h"
 #include "C:/ti/c2000/C2000Ware_5_01_00_00/device_support/f2838x/headers/include/f2838x_device.h"
+#include <math.h>
 
+// Direct register mapping to bypass missing global variable definitions
 #define Cpu1toCpu2IpcRegs (*((volatile struct CPU1TOCPU2_IPC_REGS_CPU1VIEW *)0x0005CE00))
-#define GpioDataRegs (*((volatile struct GPIO_DATA_REGS *)0x00007F00))
+#define GpioDataRegs      (*((volatile struct GPIO_DATA_REGS *)0x00007F00))
+
+// FOC Global Variables for Monitoring
+volatile float32_t foc_speed_ref = 120.0f;     // Target motor speed (electrical rad/s)
+volatile float32_t foc_speed_feedback = 0.0f; // Speed feedback estimated by CPU2 Luenberger
+volatile float32_t foc_iq_ref = 0.1f;          // Current loop Iq command (A)
+
+// Speed Loop PI parameters (1kHz Execution)
+const float32_t FOC_S_KP = 0.25f;              // Speed loop Kp
+const float32_t FOC_S_KI = 8.0f;               // Speed loop Ki
+const float32_t FOC_S_TS = 1.0e-3f;            // Speed loop period (1ms)
+static float32_t foc_speed_pi_int = 0.0f;      // Integrator state
 
 //
 // Main
 //
 void main(void)
 {
-    //
     // Initialize device clock and peripherals
-    //
     Device_init();
 
-    //
     // Boot CPU2 core
-    //
     Device_bootCPU2(BOOT_MODE_CPU2);
 
-    //
-    // Transfer write access of ADCA and EPWM1 to CPU2
-    //
+    // Transfer write access of ADCA and EPWM1, EPWM2, EPWM3 to CPU2 (FOC Core)
     SysCtl_selectCPUForPeripheralInstance(SYSCTL_CPUSEL_ADCA, SYSCTL_CPUSEL_CPU2);
     SysCtl_selectCPUForPeripheralInstance(SYSCTL_CPUSEL_EPWM1, SYSCTL_CPUSEL_CPU2);
+    SysCtl_selectCPUForPeripheralInstance(SYSCTL_CPUSEL_EPWM2, SYSCTL_CPUSEL_CPU2);
+    SysCtl_selectCPUForPeripheralInstance(SYSCTL_CPUSEL_EPWM3, SYSCTL_CPUSEL_CPU2);
 
-    //
-    // Initialize GPIO and configure the GPIO pin as a push-pull output
-    //
+    // Initialize GPIO and configure CPU1 LED (GPIO0)
     Device_initGPIO();
 
-    //
     // Initialize settings from SysConfig
-    //
     Board_init();
 
-    //
     // Initialize PIE and clear PIE registers. Disables CPU interrupts.
-    //
     Interrupt_initModule();
 
-    //
-    // Initialize the PIE vector table with pointers to the shell Interrupt
-    // Service Routines (ISR).
-    //
+    // Initialize the PIE vector table with pointers to the shell Interrupt Service Routines (ISR).
     Interrupt_initVectorTable();
 
-    //
-    // Sync CPUs so the blinking starts at the same time, though the LEDs toggle at different frequency
-    //
+    // Sync CPUs so the control starts together
     IPC_sync(IPC_CPU1_L_CPU2_R, IPC_SYNC);
 
-    //
     // Enable Global Interrupt (INTM) and realtime interrupt (DBGM)
-    //
     EINT;
     ERTM;
 
-    // Set CPU1_LED initially ON (active-low, clear GPIO0)
-    GpioDataRegs.GPACLEAR.bit.GPIO0 = 1;
-
-    //
     // Loop Forever
-    //
     uint32_t ms_counter = 0;
-    uint32_t s_curve_freq = 1000;
-
     for(;;)
     {
-        // Non-blocking IPC: check if CPU2 has cleared previous IPC_FLAG10
+        // 1. Read Estimated Speed from CPU2 via Msg RAM (CPU2 to CPU1 Msg RAM at 0x03B000)
+        foc_speed_feedback = *((volatile float32_t *)0x03B000);
+
+        // 2. Execute Speed PI Loop (1kHz, background 1ms scheduler)
+        float32_t speed_err = foc_speed_ref - foc_speed_feedback;
+        
+        // Anti-Windup Speed Integral
+        foc_speed_pi_int += FOC_S_KI * FOC_S_TS * speed_err;
+        if(foc_speed_pi_int > 5.0f)        foc_speed_pi_int = 5.0f;
+        else if(foc_speed_pi_int < -5.0f)  foc_speed_pi_int = -5.0f;
+
+        foc_iq_ref = FOC_S_KP * speed_err + foc_speed_pi_int;
+        
+        // Iq limit to safe current range [-6.0A, 6.0A]
+        if(foc_iq_ref > 6.0f)        foc_iq_ref = 6.0f;
+        else if(foc_iq_ref < -6.0f)  foc_iq_ref = -6.0f;
+
+        // 3. Send Iq_ref to CPU2 via Msg RAM (CPU1 to CPU2 Msg RAM at 0x03A000)
         if(Cpu1toCpu2IpcRegs.CPU1TOCPU2IPCFLG.bit.IPC10 == 0)
         {
-            // Write new S-Curve frequency parameter to CPU1_TO_CPU2_MSG_RAM (0x03A000)
-            *((volatile uint32_t *)0x03A000) = s_curve_freq;
-
-            // Simple S-curve frequency parameter increment logic for simulation
-            s_curve_freq += 10;
-            if(s_curve_freq > 5000)
-            {
-                s_curve_freq = 1000;
-            }
+            *((volatile float32_t *)0x03A000) = foc_iq_ref;
 
             // Trigger IPC_FLAG10 (command) and IPC_FLAG0 (interrupt trigger for CPU2)
             EALLOW;
@@ -149,7 +95,7 @@ void main(void)
             EDIS;
         }
 
-        // Toggle LED every 500ms
+        // Background slow blink (500ms) to indicate CPU1 is healthy
         ms_counter++;
         if(ms_counter >= 500)
         {
@@ -157,11 +103,6 @@ void main(void)
             GpioDataRegs.GPATOGGLE.bit.GPIO0 = 1;
         }
 
-        // Delay 1ms
-        DEVICE_DELAY_US(1000);
+        DEVICE_DELAY_US(1000); // 1ms delay
     }
 }
-
-//
-// End of File
-//
