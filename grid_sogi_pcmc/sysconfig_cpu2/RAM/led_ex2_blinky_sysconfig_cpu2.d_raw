@@ -148,3 +148,6 @@ led_ex2_blinky_sysconfig_cpu2.obj: C:\ti\c2000\C2000Ware_5_01_00_00\device_suppo
 led_ex2_blinky_sysconfig_cpu2.obj: C:\ti\c2000\C2000Ware_5_01_00_00\device_support\f2838x\headers\include\f2838x_xint.h
 led_ex2_blinky_sysconfig_cpu2.obj: C:\ti\c2000\C2000Ware_5_01_00_00\device_support\f2838x\headers\include\f2838x_can.h
 led_ex2_blinky_sysconfig_cpu2.obj: C:\ti\c2000\C2000Ware_5_01_00_00\device_support\f2838x\headers\include\f2838x_dcc.h
+led_ex2_blinky_sysconfig_cpu2.obj: C:/ti/ccs1281/ccs/tools/compiler/ti-cgt-c2000_22.6.1.LTS/include/math.h
+led_ex2_blinky_sysconfig_cpu2.obj: C:/ti/ccs1281/ccs/tools/compiler/ti-cgt-c2000_22.6.1.LTS/include/_defs.h
+led_ex2_blinky_sysconfig_cpu2.obj: C:/ti/ccs1281/ccs/tools/compiler/ti-cgt-c2000_22.6.1.LTS/include/machine/_limits.h

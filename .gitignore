@@ -1,0 +1,8 @@
+# Ignore compiled binaries and object files
+*.obj
+*.out
+*.d
+
+# Ignore SysConfig generated outputs
+syscfg/
+/workspace/
