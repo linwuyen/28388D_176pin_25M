@@ -1,0 +1,8 @@
+"./led_ex2_blinky_sysconfig_cpu2.obj"
+"./syscfg/board.obj"
+"./syscfg/c2000ware_libraries.obj"
+"./device/F2838x_CodeStartBranch.obj"
+"./device/device.obj"
+"../2838x_RAM_lnk_cpu2.cmd"
+"C:/ti/c2000/C2000Ware_5_01_00_00/driverlib/f2838x/driverlib/ccs/Debug/driverlib.lib"
+-llibc.a
