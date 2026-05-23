@@ -26,20 +26,15 @@ void main(void)
     MemCfg_setGSRAMControllerSel(MEMCFG_SECT_GS0, MEMCFG_GSRAMCONTROLLER_CPU2);
 
     //
-    // Allocate MCAN_A peripheral to CM core (1U = CM, 0U = CPU1/CPU2)
+    // Allocate CAN_B peripheral to CM core (1U = CM, 0U = CPU1/CPU2)
     //
-    SysCtl_allocateSharedPeripheral(SYSCTL_PALLOCATE_MCAN_A, 1U);
+    SysCtl_allocateSharedPeripheral(SYSCTL_PALLOCATE_CAN_B, 1U);
 
     //
-    // Set MCAN clock divider to 1 (MCAN clock = AUXCLK)
+    // Configure GPIOs for CAN B
     //
-    SysCtl_setMCANClk(SYSCTL_MCANCLK_DIV_1);
-
-    //
-    // Configure GPIOs for MCAN A
-    //
-    GPIO_setPinConfig(DEVICE_GPIO_CFG_MCANRXA);
-    GPIO_setPinConfig(DEVICE_GPIO_CFG_MCANTXA);
+    GPIO_setPinConfig(GPIO_12_CANB_TX);
+    GPIO_setPinConfig(GPIO_13_CANB_RX);
 
     //
     // Boot CPU2 core
