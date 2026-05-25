@@ -4,6 +4,8 @@
     <core id="C28xx_CPU1" project="project_0"/>
     <project configuration="@match" id="project_1" name="sysconfig_cpu2"/>
     <core id="C28xx_CPU2" project="project_1"/>
+    <project configuration="@match" id="project_2" name="sysconfig_cm"/>
+    <core id="Cortex_M4_0" project="project_2"/>
     <preBuildSteps/>
     <postBuildSteps/>
 </system>
